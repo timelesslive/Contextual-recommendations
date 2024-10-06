@@ -15,7 +15,6 @@ data_X = data.iloc[:,2:]
 data_y = data.click.values
 data_X = data_X.apply(LabelEncoder().fit_transform)
 
-
 fields = data_X.max().values + 1 # 模型输入的feature_fields
 #train, validation, test 集合
 tmp_X, test_X, tmp_y, test_y = train_test_split(data_X, data_y, test_size = 0.2, random_state=42, stratify=data_y)

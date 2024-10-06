@@ -1,15 +1,19 @@
 import json
 import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.utils.data as Data
 import numpy as np
 import random
 import pprint
 import pandas as pd 
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score , accuracy_score
 from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 from torch.utils.data import Dataset, DataLoader
 from torch.nn.utils.rnn import pad_sequence
 from DIN import DeepInterestNetwork
-from DIN import dataloader
-from AFM import AttentionalFactorizationMachine
+from DIN.dataloader import CustomDataset,custom_collate_fn, batchify
 from transformers import BertTokenizer, BertModel ,logging
 import os
 
@@ -308,8 +312,8 @@ def getUserFeature(df):
         current_path = os.path.abspath(os.path.dirname(__file__))
         cache_dir = os.path.join(current_path, 'transformers')
         logging.set_verbosity_error()
-        tokenizer = BertTokenizer.from_pretrained('bert-base-chinese',cache_dir=cache_dir)
-        bertmodel = BertModel.from_pretrained('bert-base-chinese',cache_dir=cache_dir)
+        tokenizer = BertTokenizer.from_pretrained('bert-base-chinese',cache_dir=cache_dir,local_files_only=True) # 只允许本地读取
+        bertmodel = BertModel.from_pretrained('bert-base-chinese',cache_dir=cache_dir,local_files_only=True)
         dim_bert = 768
         for key in user_feature: 
             if user_feature[key] is None:
@@ -340,6 +344,46 @@ def getUserFeature(df):
     return user_features
 
 
+def train(model,epoches,train_loader,test_loader):
+    for epoch in range(epoches):
+        train_loss = []
+        criterion = nn.BCELoss()
+        optimizer = optim.Adam(model.parameters(), lr = 0.001)
+        model.train()
+        for batch ,(x,y) in enumerate(train_loader):
+            print('type x:', type(x))
+            pred = model(x)
+            pred = pred.squeeze(-1)
+            loss = criterion(pred, y.float().detach())
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            train_loss.append(loss.item())
+        model.eval()
+        test_loss = []
+        pred_list = []
+        y_true_list = []
+        with torch.no_grad():
+            for batch, (x, y) in enumerate(test_loader):
+                pred = model(x)
+                loss = criterion(pred, y.float())
+                test_loss.append(loss.item())
+
+                # 将 pred 和 y 移动到 CPU 并转换为 NumPy 数组
+                pred_cpu = pred.cpu().numpy()
+                y_cpu = y.cpu().numpy()
+
+                # 如果 pred_cpu 和 y_cpu 是多维数组，需要展开为一维
+                pred_list.extend(pred_cpu.flatten())
+                y_true_list.extend(y_cpu.flatten())
+        # test_auc = roc_auc_score(y_true_list, pred_list)
+        print('y_true_list',y_true_list)
+        print('pred_list',pred_list)
+        pred_labels = [1 if prob >= 0.5 else 0 for prob in pred_list]
+        test_accuracy = accuracy_score(y_true_list, pred_labels)
+        print ("EPOCH %s train loss : %.5f   validation loss : %.5f   validation acc is %.5f" % (epoch, np.mean(train_loss), np.mean(test_loss), test_accuracy))        
+    return train_loss, test_loss, 
+    
 # TODO 
 # 1. 从 prompt 结果中拿出代码   √
 # 2. 跑通模型√
@@ -355,13 +399,13 @@ def getUserFeature(df):
 if __name__ == "__main__":
     # step 1 : 读入数据
     din_afm_input = prePipeLine()
-    print('real fields show\n', din_afm_input.columns)
     user_features = getUserFeature(din_afm_input)
     
    
     with open('DIN/model_config.json', 'r', encoding='utf-8') as file:
         dim_config = json.load(file)
     model = DeepInterestNetwork(dim_config)
+    model.to(device)
     batch_size = dim_config['batch_size']
     
     
@@ -417,24 +461,52 @@ if __name__ == "__main__":
     3.文本特征已经被 bert 编码但是没有被 fc 降维到 text_embedding = 64 
     4.全部都已经是放到gpu上的tensor
     '''
-    # TODO : 训练的正样本和三个负样本 .每次都需要手动挑选一个 query_article_id 。 否则只赋值了 *_candidatelist 属性
+    # TODO : 训练的正样本和随机选择的三个负样本 .每次都需要手动挑选一个 query_article_id 。 否则只赋值了 *_candidatelist 属性
+    # 所以要不就直接不要这三列，要不这里先给他删了 。所以这列就先删掉了
     for realsample in user_features:
         candidate_book_list =[realsample['positivesample'],  realsample['query_article_id_candidatelist'][0],  realsample['query_article_id_candidatelist'][1],  realsample['query_article_id_candidatelist'][2]]
-        # 作为样例输入，这里默认拿正样本跑通,也就是默认label 全是 1
+        del realsample['query_article_id_candidatelist']
+        del realsample['query_text_feature_candidatelist']
+        del realsample['query_categories_candidatelist']
+         # 作为样例输入，这里默认拿正样本跑通,也就是默认label 全是 1
         realsample['query_article_id'] = realsample['positivesample']
         realsample['query_text_feature'] = realsample['positivesample_text_feature']
         realsample['query_categories'] = realsample['positivesample_categories']
-
     # step4 : 推理跑通过程
     for i  in range(0,len(user_features), batch_size):
         batch_samples = user_features[i:i + batch_size]
-        batch_input = dataloader.batchify(batch_samples, batch_size)
-        output = model(batch_input)
+        batch_input = batchify(batch_samples, batch_size) # 自定义的批量化方法
+        model.eval()
+        output = model(batch_input) # (batch_size , 1)
+        print('final output size:', output.size())
         break
 
     # step5 : 模型训练
-    # ctr 预估的本质是给定一个物品的各个方面的特征，直接根据这个特征输出一个 0-1 的概率值，表示这个物品被点击的概率
-    # 在情景化推荐场景下，输入除了这个物品的特征值之外，还包括： 历史序列 + 用户特征 + 情景化特征。但本质上还是根据这些全部的特征输出一个 0-1 的概率值
+    '''
+    ctr 预估的本质是给定一个物品的各个方面的特征，直接根据这个特征输出一个 0-1 的概率值，表示这个物品被点击的概率
+    在情景化推荐场景下，输入除了这个物品的特征值之外，还包括： 历史序列 + 用户特征 + 情景化特征。但本质上还是根据这些全部的特征输出一个 0-1 的概率值
+    这里 query 的全部是正样本,所以假设全部的label 都是 1
+    '''
+    epoches  = 1
+    # 先将 user_features 转换为 dataframe ，user features  : 包含 dict 的 list 
+    labels  = np.array([1]*len(user_features))
+    user_features_df = pd.DataFrame(user_features) 
+    
+    train_X, test_X, train_y, test_y = train_test_split(user_features_df, labels, test_size=0.2, random_state=42, stratify=labels)
+    print('type: train_X ', type(train_X))
+    print("type :test_X ", type(test_X))
+    print('type: train_y ', type(train_y))
+    print("type :test_y ", type(test_y))
+
+    train_dataset = CustomDataset(train_X, train_y)
+    test_dataset = CustomDataset(test_X, test_y)
+
+    train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, collate_fn=custom_collate_fn)
+    test_loader = DataLoader(test_dataset, batch_size=2, shuffle=False, collate_fn=custom_collate_fn)
+
+    res = train(model,epoches,train_loader,test_loader)  
+    print(res)
+    
 
    
 

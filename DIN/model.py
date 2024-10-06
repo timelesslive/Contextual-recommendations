@@ -126,7 +126,7 @@ class DeepInterestNetwork(nn.Module):
         }
         
         # step5 : book history + book candidate  + user profile + context feature
-        self.fc_layer = FullyConnectedLayer(input_size=2 * (text_hidden_dim + embedding_dim + category_hidden_dim) + dim_config['afm_out_dim'] + (len(embed_context)-1)*context_dim+context_dim, 
+        self.fc_layer = FullyConnectedLayer(input_size=2 * (text_hidden_dim + embedding_dim + category_hidden_dim) + dim_config['afm_out_dim'] + (len(embed_context)-1)*context_dim+text_hidden_dim, 
                                             hidden_size=[200, 80, 1],
                                             bias=[True, True, False],
                                             activation='relu',
@@ -141,15 +141,16 @@ class DeepInterestNetwork(nn.Module):
         user_feature_embedded = []
 
         # embed_features ： user profile features 各个特征的维度  feature_size  表示用户本身的特征有多少个，这里配置文件里面有7个 user_ 开头的特征
-        # 将全部的
+        
         for feature in embed_features:
             # TODO : 将 user_features[feature]堆叠之后传入到 afm 的输入中 ,维度要求是：batch_size * sum(feature_dim)
             print('user_features[feature].squeeze().size()',user_features[feature].squeeze().size())
-            user_feature_embedded.append(user_features[feature].squeeze())
+            user_feature_embedded.append(user_features[feature].squeeze(-1))
             # embedding_layer = self.mapping.get(feature)  
             # embedded_feature = embedding_layer(user_features[feature].squeeze()) 
             # user_feature_embedded.append(embedded_feature)
             
+        print('user_feature_embedded.len()',len(user_feature_embedded))  
         user_feature_embedded = torch.stack(user_feature_embedded, dim=1)
         print('user_feature_embedded.size()',user_feature_embedded.size())
         user_feature_out  = self.AttentionalFactorizationMachine(user_feature_embedded)
@@ -163,7 +164,7 @@ class DeepInterestNetwork(nn.Module):
             # TODO:index out of range in self
             # print('index error place : user_features[feature]', user_features[feature])
             # print('index error place : dim.config :', dim_config[feature])
-            id_embedding = self.query_feature_embedding_dict[feature](user_features[feature].squeeze())
+            id_embedding = self.query_feature_embedding_dict[feature](user_features[feature]).squeeze(1)
             # print('id_embedding size : ', id_embedding.size())
             query_feature_embedded.append(id_embedding)
         for feature in que_text_features:
@@ -171,7 +172,7 @@ class DeepInterestNetwork(nn.Module):
             # print('text_embedding size : ', text_embedding.size())
             query_feature_embedded.append(text_embedding)
         for feature in que_category:
-            category_embedding = self.query_cate_embedding(user_features[feature].squeeze())    
+            category_embedding = self.query_cate_embedding(user_features[feature]).squeeze(1)
             # print('category_embedding size : ', category_embedding.size())
             query_feature_embedded.append(category_embedding)
 
@@ -182,17 +183,17 @@ class DeepInterestNetwork(nn.Module):
         # step3 : history 部分
         history_feature_embedded = []
         for feature in his_embed_features: # his_embed_features ： ['history_article_id']
-            user_history_embedding = self.history_feature_embedding_dict[feature](user_features[feature].squeeze(2))
+            user_history_embedding = self.history_feature_embedding_dict[feature](user_features[feature]).squeeze(-2)
             history_feature_embedded.append(user_history_embedding)
-            # print('user_history_embedding size : ', user_history_embedding.size())
+            print('user_history_embedding size : ', user_history_embedding.size())
         for feature in his_text_features: # his_text_features ： ['history_text_feature']
             history_text_embedding = self.history_text_fc(user_features[feature])
             history_feature_embedded.append(history_text_embedding)
-            # print('user_text_embedding size : ', history_text_embedding.size())
+            print('user_text_embedding size : ', history_text_embedding.size())
         for feature in his_category: # his_category ： ['history_categories']
-            history_category_embedding = self.query_cate_embedding(user_features[feature].squeeze())
+            history_category_embedding = self.query_cate_embedding(user_features[feature]).squeeze(-2)
             history_feature_embedded.append(history_category_embedding)
-            # print('history_category_embedding size : ', history_category_embedding.size())
+            print('history_category_embedding size : ', history_category_embedding.size())
 
         history_feature_embedded = torch.cat(history_feature_embedded, dim=2)
         # print('History feature_embed size', history_feature_embedded.size()) # batch_size * T * (feature_size * embedding_dim) = 2 * 8 * (2 * 8 + context_dim)
@@ -209,7 +210,7 @@ class DeepInterestNetwork(nn.Module):
         for feature in embed_context:
             embedding_layer = self.mapping.get(feature)
             if isinstance(embedding_layer, nn.Embedding):
-                embedded_feature = embedding_layer(user_features[feature].squeeze())
+                embedded_feature = embedding_layer(user_features[feature].squeeze(-1))
                 context_feature_embedded.append(embedded_feature)
             elif isinstance(embedding_layer, nn.Linear):
                 embedded_feature = embedding_layer(user_features[feature])
@@ -223,9 +224,9 @@ class DeepInterestNetwork(nn.Module):
         # step5 : 合四个输入为一，四个输入加起来的维度是 fc 线形层初始化函数 的 input_size  。拼接之前统一不进行sigmoid
         print('user_feature_embedded.size()',user_feature_out.size())
         print('query_feature_embedded.size()',query_feature_embedded.size())
-        print('history.squeeze().size()',history.squeeze().size())
+        print('history.size()',history.size())
         print('context_feature_embedded.size()',context_feature_embedded.size())
-        concat_feature = torch.cat([user_feature_out, query_feature_embedded, history.squeeze(),context_feature_embedded], dim=1) # [2,80],[2,80],[2,80],[2,168]
+        concat_feature = torch.cat([user_feature_out, query_feature_embedded, history,context_feature_embedded], dim=1) # [2,80],[2,80],[2,80],[2,116]
         
         # fully-connected layers
         # print('concat_feature.size()',concat_feature.size())
