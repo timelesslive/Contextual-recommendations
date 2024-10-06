@@ -419,11 +419,8 @@ if __name__ == "__main__":
     '''
     # TODO : 训练的正样本和三个负样本 .每次都需要手动挑选一个 query_article_id 。 否则只赋值了 *_candidatelist 属性
     for realsample in user_features:
-        candidate_book_list =[realsample['positivesample'], 
-                        realsample['query_article_id_candidatelist'][0], 
-                        realsample['query_article_id_candidatelist'][1], 
-                        realsample['query_article_id_candidatelist'][2]]
-        # 作为样例输入，这里默认拿正样本跑通
+        candidate_book_list =[realsample['positivesample'],  realsample['query_article_id_candidatelist'][0],  realsample['query_article_id_candidatelist'][1],  realsample['query_article_id_candidatelist'][2]]
+        # 作为样例输入，这里默认拿正样本跑通,也就是默认label 全是 1
         realsample['query_article_id'] = realsample['positivesample']
         realsample['query_text_feature'] = realsample['positivesample_text_feature']
         realsample['query_categories'] = realsample['positivesample_categories']

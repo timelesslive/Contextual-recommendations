@@ -38,75 +38,77 @@ class DeepInterestNetwork(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        embedding_size = config['embedding_size']
+        embedding_dim = config['embedding_dim']
+        context_dim = config['context_dim']
         
         # step 1: candidate item 部分的网络结构
         self.query_feature_embedding_dict = dict()
         # 书籍的id ||  feature_dim 表示书籍总数 
         for feature in que_embed_features: # que_embed_features ： ['query_article_id']
             self.query_feature_embedding_dict[feature] = EmbeddingLayer(feature_dim=dim_config[feature],
-                                                                        embedding_dim=embedding_size).to(device)
+                                                                        embedding_dim=embedding_dim).to(device)
         # 模态id，这里使用 text_feature 。输入768维，输出64维
         self.query_text_fc = FullyConnectedLayer(input_size=768,
                                                   hidden_size=[text_hidden_dim],
                                                   bias=[True],
                                                   activation='relu').to(device)
         # 类别id
-        self.query_cate_embedding = nn.Embedding(category_hidden_dim, embedding_size).to(device)
+        self.query_cate_embedding = nn.Embedding(category_hidden_dim, embedding_dim).to(device)
         
         # step 2: User Behavior 部分的网络结构 。也是书籍id + text_feature + category
         self.history_feature_embedding_dict = dict()
         for feature in his_embed_features:
             self.history_feature_embedding_dict[feature] = EmbeddingLayer(feature_dim=dim_config[feature],
-                                                                          embedding_dim=embedding_size).to(device)    
+                                                                          embedding_dim=embedding_dim).to(device)    
         self.history_text_fc = FullyConnectedLayer(input_size=768,
                                                     hidden_size=[text_hidden_dim],
                                                     bias=[True],
                                                     activation='relu').to(device)                                                     
-        # print('attention - embedding_size',text_hidden_dim + embedding_size + category_hidden_dim)  # dim : 80 = 64 + 8 + 8 ,for each good of user behavior
-        self.attn = AttentionSequencePoolingLayer(embedding_dim=text_hidden_dim + embedding_size + category_hidden_dim).to(device)
+        # print('attention - embedding_dim',text_hidden_dim + embedding_dim + category_hidden_dim)  # dim : 80 = 64 + 8 + 8 ,for each good of user behavior
+        self.attn = AttentionSequencePoolingLayer(embedding_dim=text_hidden_dim + embedding_dim + category_hidden_dim).to(device)
 
         # step3 : user profile features 部分的embedding层 
-        self.user_id_embedding = nn.Embedding(config['user_id'], embedding_size).to(device)
-        self.user_gender_embedding = nn.Embedding(config['user_gender'], embedding_size).to(device)
-        self.user_age_embedding = nn.Embedding(config['user_age'], embedding_size).to(device)
-        self.user_education_embedding = nn.Embedding(config['user_education'], embedding_size).to(device)
-        self.user_major_embedding = nn.Embedding(config['user_major'], embedding_size).to(device)
-        self.user_marital_embedding = nn.Embedding(config['user_marital'], embedding_size).to(device)
-        self.user_interest_embedding = nn.Embedding(config['user_interest'], embedding_size).to(device)
+        # self.user_id_embedding = nn.Embedding(config['user_id'], embedding_dim).to(device)
+        # self.user_gender_embedding = nn.Embedding(config['user_gender'], embedding_dim).to(device)
+        # self.user_age_embedding = nn.Embedding(config['user_age'], embedding_dim).to(device)
+        # self.user_education_embedding = nn.Embedding(config['user_education'], embedding_dim).to(device)
+        # self.user_major_embedding = nn.Embedding(config['user_major'], embedding_dim).to(device)
+        # self.user_marital_embedding = nn.Embedding(config['user_marital'], embedding_dim).to(device)
+        # self.user_interest_embedding = nn.Embedding(config['user_interest'], embedding_dim).to(device)
         
-        afm_inpit_dim = sum([dim_config[feature] for feature in embed_features])
-        self.AttentionalFactorizationMachine = AttentionalFactorizationMachine(feature_fields=afm_inpit_dim,embed_dim=embedding_size, attn_size=8, dropouts=(0.25, 0.25))
+        afm_inpit_dim = np.stack([dim_config[feature] for feature in embed_features])
+        print('afm_inpit_dim.shape',afm_inpit_dim.shape)
+        self.AttentionalFactorizationMachine = AttentionalFactorizationMachine(feature_fields=afm_inpit_dim,embed_dim=10*embedding_dim, attn_size=8, dropouts=(0.25, 0.25)).to(device)
         
         # : step4 : context feature 的embedding层
-        self.situation_curbook_embedding = nn.Embedding(config['situation_curbook'], embedding_size).to(device)
-        self.sitation_browsertime_ln = nn.Linear(1, embedding_size).to(device)
-        self.sitation_datetime_ln = nn.Linear(1, embedding_size).to(device)
+        self.situation_curbook_embedding = nn.Embedding(config['situation_curbook'], context_dim).to(device)
+        self.sitation_browsertime_ln = nn.Linear(1, context_dim).to(device)
+        self.sitation_datetime_ln = nn.Linear(1, context_dim).to(device)
         # 假设已经获得了bert-base-chinese的文本特征 ,这个特征是64维的
         self.situation_search_fc = FullyConnectedLayer(input_size=768,
                                             hidden_size=[text_hidden_dim],
                                             bias=[True],
                                             activation='relu').to(device)
-        self.situation_month_embedding = nn.Embedding(config['situation_month'], embedding_size).to(device)
-        self.situation_weekdays_embedding = nn.Embedding(config['situation_weekdays'], embedding_size).to(device)
-        self.situation_parttime_embedding = nn.Embedding(config['situation_parttime'], embedding_size).to(device)
-        self.situation_postype_embedding = nn.Embedding(config['situation_postype'], embedding_size).to(device)
-        self.situation_weather_embedding = nn.Embedding(config['situation_weather'], embedding_size).to(device)
-        self.situation_city_embedding = nn.Embedding(config['situation_city'], embedding_size).to(device)
-        self.situation_temp_embedding = nn.Embedding(config['situation_temp'], embedding_size).to(device)
-        self.situation_humidity_embedding = nn.Embedding(config['situation_humidity'], embedding_size).to(device)
-        self.situation_windscale_embedding = nn.Embedding(config['situation_windscale'], embedding_size).to(device)
-        self.situation_noise_embedding = nn.Embedding(config['situation_noise'], embedding_size).to(device)
+        self.situation_month_embedding = nn.Embedding(config['situation_month'], context_dim).to(device)
+        self.situation_weekdays_embedding = nn.Embedding(config['situation_weekdays'], context_dim).to(device)
+        self.situation_parttime_embedding = nn.Embedding(config['situation_parttime'], context_dim).to(device)
+        self.situation_postype_embedding = nn.Embedding(config['situation_postype'], context_dim).to(device)
+        self.situation_weather_embedding = nn.Embedding(config['situation_weather'], context_dim).to(device)
+        self.situation_city_embedding = nn.Embedding(config['situation_city'], context_dim).to(device)
+        self.situation_temp_embedding = nn.Embedding(config['situation_temp'], context_dim).to(device)
+        self.situation_humidity_embedding = nn.Embedding(config['situation_humidity'], context_dim).to(device)
+        self.situation_windscale_embedding = nn.Embedding(config['situation_windscale'], context_dim).to(device)
+        self.situation_noise_embedding = nn.Embedding(config['situation_noise'], context_dim).to(device)
         
         # map for step3 and step4
         self.mapping = {
-            'user_id': self.user_id_embedding,
-            'user_gender': self.user_gender_embedding,
-            'user_age': self.user_age_embedding,
-            'user_education': self.user_education_embedding,
-            'user_major': self.user_major_embedding,
-            'user_marital': self.user_marital_embedding,
-            'user_interest': self.user_interest_embedding,
+            # 'user_id': self.user_id_embedding,
+            # 'user_gender': self.user_gender_embedding,
+            # 'user_age': self.user_age_embedding,
+            # 'user_education': self.user_education_embedding,
+            # 'user_major': self.user_major_embedding,
+            # 'user_marital': self.user_marital_embedding,
+            # 'user_interest': self.user_interest_embedding,
             'situation_curbook': self.situation_curbook_embedding,
             'situation_browsertime': self.sitation_browsertime_ln,
             'situation_datetime': self.sitation_datetime_ln,
@@ -124,7 +126,7 @@ class DeepInterestNetwork(nn.Module):
         }
         
         # step5 : book history + book candidate  + user profile + context feature
-        self.fc_layer = FullyConnectedLayer(input_size=2 * (text_hidden_dim + embedding_size + category_hidden_dim) + len(embed_features)*embedding_size + (len(embed_context)-1)*embedding_size+64, 
+        self.fc_layer = FullyConnectedLayer(input_size=2 * (text_hidden_dim + embedding_dim + category_hidden_dim) + dim_config['afm_out_dim'] + (len(embed_context)-1)*context_dim+context_dim, 
                                             hidden_size=[200, 80, 1],
                                             bias=[True, True, False],
                                             activation='relu',
@@ -141,13 +143,17 @@ class DeepInterestNetwork(nn.Module):
         # embed_features ： user profile features 各个特征的维度  feature_size  表示用户本身的特征有多少个，这里配置文件里面有7个 user_ 开头的特征
         # 将全部的
         for feature in embed_features:
-            # TODO : 将 user_features[feature]堆叠之后传入到 afm 的输入中
-            embedding_layer = self.mapping.get(feature)  
-            embedded_feature = embedding_layer(user_features[feature].squeeze()) 
-            user_feature_embedded.append(embedded_feature)
+            # TODO : 将 user_features[feature]堆叠之后传入到 afm 的输入中 ,维度要求是：batch_size * sum(feature_dim)
+            print('user_features[feature].squeeze().size()',user_features[feature].squeeze().size())
+            user_feature_embedded.append(user_features[feature].squeeze())
+            # embedding_layer = self.mapping.get(feature)  
+            # embedded_feature = embedding_layer(user_features[feature].squeeze()) 
+            # user_feature_embedded.append(embedded_feature)
             
-        user_feature_embedded = torch.cat(user_feature_embedded, dim=1)
-        # print('User_feature_embed size : ', user_feature_embedded.size()) # batch_size * (feature_size * embedding_size) ，2 *（7 * 8）
+        user_feature_embedded = torch.stack(user_feature_embedded, dim=1)
+        print('user_feature_embedded.size()',user_feature_embedded.size())
+        user_feature_out  = self.AttentionalFactorizationMachine(user_feature_embedded)
+        # print('User_feature_embed size : ', user_feature_embedded.size()) # batch_size * (feature_size * embedding_dim) ，2 *（7 * 8）
         # print('User feature done')
         
         # step2: candidate item 部分
@@ -170,7 +176,7 @@ class DeepInterestNetwork(nn.Module):
             query_feature_embedded.append(category_embedding)
 
         query_feature_embedded = torch.cat(query_feature_embedded, dim=1)
-        # print('Query feature_embed size', query_feature_embedded.size()) # batch_size * (2 * embedding_size + text_embedding_size) ,2 *(2*8 + 64)
+        # print('Query feature_embed size', query_feature_embedded.size()) # batch_size * (2 * embedding_dim + text_embedding_dim) ,2 *(2*8 + context_dim)
         # print('Query feature done')
 
         # step3 : history 部分
@@ -189,7 +195,7 @@ class DeepInterestNetwork(nn.Module):
             # print('history_category_embedding size : ', history_category_embedding.size())
 
         history_feature_embedded = torch.cat(history_feature_embedded, dim=2)
-        # print('History feature_embed size', history_feature_embedded.size()) # batch_size * T * (feature_size * embedding_size) = 2 * 8 * (2 * 8 + 64)
+        # print('History feature_embed size', history_feature_embedded.size()) # batch_size * T * (feature_size * embedding_dim) = 2 * 8 * (2 * 8 + context_dim)
         # print('History feature done')
         
         # print(user_features.keys())
@@ -214,11 +220,12 @@ class DeepInterestNetwork(nn.Module):
         context_feature_embedded.append(text_embedding)
         context_feature_embedded = torch.cat(context_feature_embedded, dim=1)
         
-        # step5 : 合四个输入为一，四个输入加起来的维度是 fc 线形层初始化函数 的 input_size 
-        # print('user_feature_embedded.size()',user_feature_embedded.size())
-        # print('query_feature_embedded.size()',query_feature_embedded.size())
-        # print('history.squeeze().size()',history.squeeze().size())
-        concat_feature = torch.cat([user_feature_embedded, query_feature_embedded, history.squeeze(),context_feature_embedded], dim=1) # [2,56],[2,80],[2,80]
+        # step5 : 合四个输入为一，四个输入加起来的维度是 fc 线形层初始化函数 的 input_size  。拼接之前统一不进行sigmoid
+        print('user_feature_embedded.size()',user_feature_out.size())
+        print('query_feature_embedded.size()',query_feature_embedded.size())
+        print('history.squeeze().size()',history.squeeze().size())
+        print('context_feature_embedded.size()',context_feature_embedded.size())
+        concat_feature = torch.cat([user_feature_out, query_feature_embedded, history.squeeze(),context_feature_embedded], dim=1) # [2,80],[2,80],[2,80],[2,168]
         
         # fully-connected layers
         # print('concat_feature.size()',concat_feature.size())

@@ -18,7 +18,8 @@ class AttentionalFactorizationMachine(nn.Module):
         
         print('embedding input dim:',sum(feature_fields)+1)
         #线性部分
-        self.linear = nn.Embedding(sum(feature_fields)+1, 1)
+        # self.linear = nn.Embedding(sum(feature_fields)+1, 1)
+        self.linear = nn.Embedding(sum(feature_fields)+1, embed_dim)
         self.bias =nn.Parameter(torch.zeros((1,)))  
         
         #embedding
@@ -28,12 +29,11 @@ class AttentionalFactorizationMachine(nn.Module):
         #attention部分
         self.attention = nn.Linear(embed_dim, attn_size)
         self.projection = nn.Linear(attn_size, 1)
-        self.fc = nn.Linear(embed_dim, 1)
+        # self.fc = nn.Linear(embed_dim, 1)
+        self.fc = nn.Linear(embed_dim, embed_dim)
         self.dropouts = dropouts
     
     def forward(self, x):
-        print('=============into forward==================')
-        print('input dim:',x.shape)
         tmp = x + x.new_tensor(self.offsets).unsqueeze(0) #构造成embeding形式
         linear_part = torch.sum(self.linear(tmp), dim = 1) + self.bias # 线性部分
         
@@ -53,14 +53,8 @@ class AttentionalFactorizationMachine(nn.Module):
         attn_scores = nn.functional.dropout(attn_scores, p = self.dropouts[0])
         attn_output = torch.sum(attn_scores * inner, dim = 1)
         attn_output = nn.functional.dropout(attn_output, p = self.dropouts[1])
-        print('attn_output dim:',attn_output.shape)
-        inner_attn_part = self.fc(attn_output)
-        print('Linear part dim:',linear_part.shape)
-        print('inner_attn_part dim:',inner_attn_part.shape)
-        # 最后输出
+        inner_attn_part = self.fc(attn_output)   #  调整，从原本的 ->1 转为 ->embed_dim ，统一为din 的一部分
         x = linear_part + inner_attn_part
-        print('afm out dim:',x.shape)
-        x = torch.sigmoid(x.squeeze(1))
-        print('afm out dim after sigmoid :',x.shape)
-        print('sample out:',x[:5])
+        print('afm output size',x.size())
+        # x = torch.sigmoid(x.squeeze(1))
         return x

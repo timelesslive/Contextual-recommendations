@@ -1,7 +1,9 @@
 {   
     "batch_size":2,
-    "embedding_size": 8,
+    "embedding_dim": 8,
+    "context_dim": 4,
     "history_len":20,
+    "afm_out_dim":80,
 
     "user_id": 5,
     "user_gender": 2,
